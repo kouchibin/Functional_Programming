@@ -2,6 +2,7 @@ module BlackJack where
 import Cards
 import RunGame
 import Test.QuickCheck
+import System.Random
 
 --------------------------------------------------------------------
 -- A0 | The length of hand2 should be 2.
@@ -33,7 +34,7 @@ displayCard (Card r s) = rankToString r ++ " of " ++ suitToString s
 -- | Shows the cards in a hand in a nice format.
 display :: Hand -> String
 display Empty     = ""
-display (Add c h) = displayCard c ++ "\n" ++ display h
+display (Add card hand) = displayCard card ++ "\n" ++ display hand
 
 --------------------------------------------------------------------
 -- A2 | Calculate the value of a hand.
@@ -41,8 +42,8 @@ display (Add c h) = displayCard c ++ "\n" ++ display h
 -- | Returns the number of Aces in a hand.
 numberOfAces :: Hand -> Integer
 numberOfAces Empty                = 0
-numberOfAces (Add (Card Ace _) h) = 1 + numberOfAces h
-numberOfAces (Add _ h)            = numberOfAces h
+numberOfAces (Add (Card Ace _) hand) = 1 + numberOfAces hand
+numberOfAces (Add _ hand)            = numberOfAces hand
 
 -- | Returns the value of a card. Ace = 11. 
 cardValue :: Card -> Integer
@@ -53,13 +54,13 @@ cardValue _                    = 10
 -- | Returns the initial value (Ace = 11) of a hand.
 initialValue :: Hand -> Integer
 initialValue Empty     = 0
-initialValue (Add c h) = cardValue c + initialValue h
+initialValue (Add card hand) = cardValue card + initialValue hand
 
 -- | Returns the value of a hand.
 value :: Hand -> Integer
 value Empty = 0
-value h | initialValue h > 21 = initialValue h - ((numberOfAces h) * 10)
-        | otherwise           = initialValue h
+value hand | initialValue hand > 21 = initialValue hand - ((numberOfAces hand) * 10)
+        | otherwise           = initialValue hand
 
 
 -- | Some tests.
@@ -85,16 +86,16 @@ test_value = [0, 13, 23, 11, 2, 21, 14] ==
 -- A3 | Test if player got busted.
 
 gameOver :: Hand -> Bool
-gameOver h = value h > 21 
+gameOver hand = value hand > 21 
 
 --------------------------------------------------------------------
 -- A4 | Decide which player wins.
 
 -- | Given players' points and returns winner.
 winner_points :: Integer -> Integer -> Player
-winner_points g b | g <= 21 && b < g  = Guest
-                  | b <= 21 && g <= b = Bank
-                  | b > 21 && g <= 21 = Guest
+winner_points guest bank | guest <= 21 && bank < guest  = Guest
+                  | bank <= 21 && guest <= bank = Bank
+                  | bank > 21 && guest <= 21 = Guest
                   | otherwise         = Bank
 
 -- | Given players' hands and returns the winner.
@@ -130,7 +131,7 @@ test_winner = [bank_1, bank_2, bank_3, bank_4, bank_5, bank_6, bank_7] == replic
 
 (<+) :: Hand -> Hand -> Hand
 (<+) Empty h2     = h2
-(<+) (Add c h) h2 = Add c (h <+ h2)  
+(<+) (Add card hand) h2 = Add card (hand <+ h2)  
 
 -- | Associativity property test.
 prop_onTopOf_assoc :: Hand -> Hand -> Hand -> Bool
@@ -163,4 +164,73 @@ fullDeck = handBuilder allCards
 
 draw :: Hand -> Hand -> (Hand,Hand)
 draw Empty _ = error "draw: The deck is empty."
-draw (Add c d) h = (d , (Add c h)) 
+draw (Add card deck) hand = (deck , (Add card hand)) 
+
+--------------------------------------------------------------------
+-- B4 | Bank player logic.
+
+playBankHelper :: Hand -> Hand -> Hand
+playBankHelper deck hand | value hand < 16 = playBankHelper smallerDeck biggerHand
+                         | otherwise       = hand
+    where (smallerDeck, biggerHand) = draw deck hand
+
+-- Returns a hand for the bank player from a deck.
+playBank :: Hand -> Hand
+playBank deck = playBankHelper deck Empty
+
+--------------------------------------------------------------------
+-- B5 | Shuffle deck.
+
+-- Removes the nth card from the deck, returns the card and the remaining deck.
+remove :: Int -> Hand -> (Card, Hand) 
+remove n Empty                                      = error "Hand is empty."
+remove n (Add card hand) | n <= 0                   = error "n is smaller or equal to 0"
+                         | n > size (Add card hand) = error "n is greater than the size of the hand"
+                         | n == 1                   = (card, hand) 
+                         | otherwise                = (drawnCard, Add card smallerHand)
+                               where (drawnCard, smallerHand) = remove (n-1) hand
+
+-- Helper function for shuffling deck. 
+shuffleHelper :: StdGen -> Hand -> Hand -> (Hand, Hand, StdGen)
+shuffleHelper g deck shuffledHand | size deck == 0    = (deck, shuffledHand, g) 
+                                  | otherwise         = shuffleHelper g1 smallerDeck newShuffled
+                                      where (random, g1)          = randomR (1, size deck ) g 
+                                            (rCard, smallerDeck)  = remove random deck
+                                            newShuffled           = (Add rCard shuffledHand)
+
+-- Given a random generator and and deck, returns the shuffled deck.
+shuffleDeck :: StdGen -> Hand -> Hand
+shuffleDeck gen deck = shuffled
+    where (_, shuffled , _) = shuffleHelper gen deck Empty
+
+-- Test if the shuffled deck has the same cards.
+prop_shuffle_sameCards :: StdGen -> Card -> Hand -> Bool
+prop_shuffle_sameCards g card hand =
+    card `belongsTo` hand == card `belongsTo` shuffleDeck g hand
+
+-- See if a card belongs to a hand.
+belongsTo :: Card -> Hand -> Bool
+card `belongsTo` Empty = False
+card `belongsTo` (Add card' hand) = card == card' || card `belongsTo` hand
+
+-- Test if the shuffled deck has the same size as the original one.
+prop_size_shuffle :: StdGen -> Hand -> Bool
+prop_size_shuffle gen deck = size deck == size (shuffleDeck gen deck)  
+
+--------------------------------------------------------------------
+-- B6 | Interface
+
+implementation = Interface
+  { iFullDeck = fullDeck
+  , iValue    = value
+  , iDisplay  = display
+  , iGameOver = gameOver
+  , iWinner   = winner
+  , iDraw     = draw
+  , iPlayBank = playBank
+  , iShuffle  = shuffleDeck
+  }
+
+main :: IO ()
+main = runGame implementation
+                            
