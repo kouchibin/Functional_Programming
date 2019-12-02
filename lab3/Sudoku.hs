@@ -3,6 +3,8 @@ module Sudoku where
 import Test.QuickCheck
 import Data.Char
 import Data.List
+import Test.QuickCheck.Modifiers
+import Data.Maybe
 
 ------------------------------------------------------------------------------
 
@@ -11,7 +13,7 @@ type Cell = Maybe Int -- a single cell
 type Row  = [Cell]    -- a row is a list of cells
 
 data Sudoku = Sudoku [Row] 
- deriving ( Show, Eq )
+ deriving ( Show, Eq , Read)
 
 rows :: Sudoku -> [Row]
 rows (Sudoku ms) = ms
@@ -181,39 +183,85 @@ type Pos = (Int,Int)
 -- * E1
 
 blanks :: Sudoku -> [Pos]
-blanks = undefined
+blanks su = [(r, c) | r <- [0..8], c <- [0..8], matrix!!r!!c == Nothing]
+  where matrix = rows su
 
---prop_blanks_allBlanks :: ...
---prop_blanks_allBlanks =
-
+prop_blanks_allBlanks :: Sudoku -> Bool
+prop_blanks_allBlanks su = and [matrix!!r!!c == Nothing | (r, c) <- blankList] 
+  where blankList = blanks su
+        matrix    = rows su
 
 -- * E2
 
 (!!=) :: [a] -> (Int,a) -> [a]
-xs !!= (i,y) = undefined
+[]     !!= _     = []
+(x:xs) !!= (0,y) = [y] ++ xs
+(x:xs) !!= (i,y) = [x] ++ (xs !!= (i-1, y))
 
---prop_bangBangEquals_correct :: ...
---prop_bangBangEquals_correct =
-
+prop_bangBangEquals_correct :: [Int] -> (Int, Int) -> Bool
+prop_bangBangEquals_correct [] (idx, val) = [] == converted
+        where converted = ([] !!= (idx, val)) 
+prop_bangBangEquals_correct xs (idx, val) | 0 <= idx && idx < length xs = 
+        (take idx xs) ++ [val] ++ (drop (idx+1) xs) == converted
+        | otherwise = xs == converted
+        where converted = xs !!= (idx, val) 
 
 -- * E3
 
 update :: Sudoku -> Pos -> Cell -> Sudoku
-update = undefined
+update su (r,c) val | r >= 0 && r < 9 && c >= 0 && c < 9 = Sudoku $ (take r matrix) ++ [((matrix!!r) !!= (c, val))] ++ (drop (r+1) matrix)
+                    | otherwise = su
+  where matrix = rows su
 
---prop_update_updated :: ...
---prop_update_updated =
+prop_update_updated :: Sudoku -> (NonNegative Int, NonNegative Int)-> Cell -> Property 
+prop_update_updated su (NonNegative r, NonNegative c) val = r < 9 && c < 9 ==> result!!r!!c == val
+  where result = rows $ update su (r,c) val
 
 
 ------------------------------------------------------------------------------
 
 -- * F1
 
+allFineSudoku :: Sudoku -> Bool
+allFineSudoku su = (isSudoku su) && (isOkay su)
+
+solve' :: Sudoku -> [Pos] -> Maybe Sudoku
+solve' su []      | isOkay su = Just su
+                  | otherwise = Nothing 
+solve' su (p:pos) | isOkay su = listToMaybe $ catMaybes [solve' (update su p fill) pos | fill <- [Just i | i <- [1..9]]]
+                  | otherwise = Nothing
+
+solve :: Sudoku -> Maybe Sudoku
+solve su | allFineSudoku su  = solve' su $ blanks su 
+         | otherwise         = Nothing 
 
 -- * F2
 
+readAndSolve :: FilePath -> IO () 
+readAndSolve filename = do
+    su <- readSudoku filename
+    let solution = solve su
+    if solution == Nothing
+        then putStrLn "(no solution)"
+        else printSudoku $ fromJust solution
 
 -- * F3
 
 
+isSolutionOf :: Sudoku -> Sudoku -> Bool
+isSolutionOf solution su | isFilled solution && allFineSudoku solution = and [solutionMatrix!!i!!j == suMatrix!!i!!j | i <-[0..8], j <- [0..8], suMatrix!!i!!j /= Nothing ] 
+                         | otherwise                                   = False
+    where solutionMatrix = rows solution 
+          suMatrix       = rows su
+
 -- * F4
+fewerChecks prop =
+    quickCheckWith stdArgs{maxSuccess=30 } prop
+
+prop_SolveSound :: Sudoku -> Property
+-- prop_SolveSound su =  isJust solution ==> within timeout $ (fromJust solution) `isSolutionOf` su
+--     where solution = solve su
+--           timeout = 30000
+prop_SolveSound su = within timeout $ isJust solution ==> (fromJust solution) `isSolutionOf` su
+    where solution = solve su
+          timeout = 60000000
