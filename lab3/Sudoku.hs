@@ -168,7 +168,7 @@ prop_blocks_lengths su = length all_blocks == 27 &&
 -- * D3
 
 isOkay :: Sudoku -> Bool
-isOkay = and . map isOkayBlock . blocks 
+isOkay su = all isOkayBlock $ blocks su
 
 
 ---- Part A ends here --------------------------------------------------------
@@ -194,26 +194,34 @@ prop_blanks_allBlanks su = and [matrix!!r!!c == Nothing | (r, c) <- blankList]
 -- * E2
 
 (!!=) :: [a] -> (Int,a) -> [a]
-[]     !!= _     = []
-(x:xs) !!= (0,y) = [y] ++ xs
-(x:xs) !!= (i,y) = [x] ++ (xs !!= (i-1, y))
+xs !!= (idx, val) | idx < length xs && idx >=0 = front ++ (val:ys)
+                  | otherwise       = xs
+    where (front, y:ys) = splitAt idx xs 
+    
+-- (x:xs) !!= (0,y) = [y] ++ xs
+-- (x:xs) !!= (i,y) = [x] ++ (xs !!= (i-1, y))
 
 prop_bangBangEquals_correct :: [Int] -> (Int, Int) -> Bool
+
+-- Replace something in an empty list always returns an empty list.
 prop_bangBangEquals_correct [] (idx, val) = [] == converted
         where converted = ([] !!= (idx, val)) 
-prop_bangBangEquals_correct xs (idx, val) | 0 <= idx && idx < length xs = 
+
+prop_bangBangEquals_correct xs (idx, val)
+    | 0 <= idx && idx < length xs = 
         (take idx xs) ++ [val] ++ (drop (idx+1) xs) == converted
-        | otherwise = xs == converted
+    | otherwise = xs == converted
         where converted = xs !!= (idx, val) 
 
 -- * E3
 
-update :: Sudoku -> Pos -> Cell -> Sudoku
-update su (r,c) val | r >= 0 && r < 9 && c >= 0 && c < 9 = Sudoku $ (take r matrix) ++ [((matrix!!r) !!= (c, val))] ++ (drop (r+1) matrix)
-                    | otherwise = su
-  where matrix = rows su
+update :: Sudoku -> Pos -> Maybe Int -> Sudoku
+update su (r,c) val | r >= 0 && r < 9 = Sudoku $ matrix !!= (r, newRow)
+                    | otherwise       = su
+        where matrix  = rows su
+              newRow  = (matrix!!r) !!= (c, val)
 
-prop_update_updated :: Sudoku -> (NonNegative Int, NonNegative Int)-> Cell -> Property 
+prop_update_updated :: Sudoku -> (NonNegative Int, NonNegative Int) -> Cell -> Property 
 prop_update_updated su (NonNegative r, NonNegative c) val = r < 9 && c < 9 ==> result!!r!!c == val
   where result = rows $ update su (r,c) val
 
@@ -225,15 +233,15 @@ prop_update_updated su (NonNegative r, NonNegative c) val = r < 9 && c < 9 ==> r
 allFineSudoku :: Sudoku -> Bool
 allFineSudoku su = (isSudoku su) && (isOkay su)
 
-solve' :: Sudoku -> [Pos] -> Maybe Sudoku
-solve' su []      | isOkay su = Just su
-                  | otherwise = Nothing 
-solve' su (p:pos) | isOkay su = listToMaybe $ catMaybes [solve' (update su p fill) pos | fill <- [Just i | i <- [1..9]]]
-                  | otherwise = Nothing
+solve' :: Sudoku -> [Pos] -> [Sudoku]
+solve' su []      | isOkay su = [su]
+                  | otherwise = []
+solve' su (p:pos) | isOkay su = concat [solve' (update su p fill) pos | fill <- [Just i | i <- [1..9]]]
+                  | otherwise = []
 
 solve :: Sudoku -> Maybe Sudoku
-solve su | allFineSudoku su  = solve' su $ blanks su 
-         | otherwise         = Nothing 
+solve su | isSudoku su = listToMaybe $ solve' su $ blanks su 
+         | otherwise   = Nothing 
 
 -- * F2
 
@@ -247,21 +255,19 @@ readAndSolve filename = do
 
 -- * F3
 
-
 isSolutionOf :: Sudoku -> Sudoku -> Bool
-isSolutionOf solution su | isFilled solution && allFineSudoku solution = and [solutionMatrix!!i!!j == suMatrix!!i!!j | i <-[0..8], j <- [0..8], suMatrix!!i!!j /= Nothing ] 
-                         | otherwise                                   = False
+isSolutionOf solution su | isFilled solution && allFineSudoku solution 
+                            = and [solutionMatrix!!i!!j == suMatrix!!i!!j | i <-[0..8], j <- [0..8], suMatrix!!i!!j /= Nothing ] 
+                         | otherwise                                   
+                            = False
     where solutionMatrix = rows solution 
           suMatrix       = rows su
 
 -- * F4
 fewerChecks prop =
-    quickCheckWith stdArgs{maxSuccess=30 } prop
+    quickCheckWith stdArgs{maxSuccess=30} prop
 
 prop_SolveSound :: Sudoku -> Property
--- prop_SolveSound su =  isJust solution ==> within timeout $ (fromJust solution) `isSolutionOf` su
---     where solution = solve su
---           timeout = 30000
 prop_SolveSound su = within timeout $ isJust solution ==> (fromJust solution) `isSolutionOf` su
     where solution = solve su
           timeout = 60000000
