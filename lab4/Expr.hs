@@ -138,5 +138,54 @@ instance Arbitrary Expr where
     arbitrary = sized arbExpr
 
 
+--------------- F --------------- 
 
+simplify :: Expr -> Expr
+simplify (Num d) = Num d
+simplify Var = Var
+
+simplify (Add (Num d1) (Num d2)) = Num (d1 + d2)
+simplify (Add (Num 0) e)         = e
+simplify (Add e (Num 0))         = e
+simplify (Add (Num d) Var) = Add (Num d) Var
+simplify (Add Var (Num d)) = Add Var (Num d)
+simplify (Add e1 e2)             =  case e1' of 
+        Num e1n -> case e2' of
+                    Num e2n -> simplify $ Add e1' e2'
+                    _       -> Add e1' e2'
+        _       -> Add e1' e2'
+    where e1' = simplify e1
+          e2' = simplify e2
+
+simplify (Mul (Num d1) (Num d2)) = Num (d1 * d2)
+simplify (Mul (Num 0) e)         = Num 0
+simplify (Mul e (Num 0))         = Num 0
+simplify (Mul (Num 1) e)         = e
+simplify (Mul e (Num 1))         = e
+simplify (Mul (Num d) Var) = Mul (Num d) Var
+simplify (Mul Var (Num d)) = Mul Var (Num d)
+simplify (Mul e1 e2)             = case e1' of 
+        Num e1n -> case e2' of
+                    Num e2n -> simplify $ Mul e1' e2'
+                    _       -> Mul e1' e2'
+        _       -> Mul e1' e2'
+    where e1' = simplify e1
+          e2' = simplify e2
+
+simplify (App f e)               = App f (simplify e)
+
+prop_simplify :: Expr -> Double -> Bool 
+prop_simplify e x =  eval e x == eval se x && simplify se == se  
+    where se = simplify e
+
+
+--------------- G --------------- 
+
+differentiate :: Expr -> Expr
+differentiate (Num d) = Num 0
+differentiate Var     = Num 1
+differentiate (Add e1 e2) = simplify (Add (differentiate e1) (differentiate e2))
+differentiate (Mul e1 e2) = simplify (Add (Mul (differentiate e1) e2) (Mul (differentiate e2) e1))
+differentiate (App Sin e) = simplify(Mul(differentiate e) (App Cos e))
+differentiate (App Cos e) = simplify(Mul (Num (-1)) (Mul(differentiate e) (App Sin e)))
 
