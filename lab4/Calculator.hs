@@ -1,6 +1,6 @@
--- This module is a starting point for implementing the Graph Drawing
--- Calculator as described in Part II of the Standard Lab. You can use this
--- directly, or just study it as an example of how to use threepenny-gui.
+
+-- The zoom function has been worked into the other functions --
+
 
 import ThreepennyPages
 import Graphics.UI.Threepenny.Core as UI
@@ -20,12 +20,10 @@ setup window =
      fx             <- mkHTML "<i>f</i>(<i>x</i>)="  -- The text "f(x)="
      input          <- mkInput 20 "x"                -- The formula input
      draw           <- mkButton "Draw graph"         -- The draw button
-     zoomFactor     <- mkHTML "<i>zoom</i>="  -- The text "f(x)="
-     zoomInput      <- mkInput 20 "1"                -- The formula input
-     zoom           <- mkButton "zoom"         -- The draw button
-     differentiate  <- mkButton "differentiate"      -- The draw button
-       -- The markup "<i>...</i>" means that the text inside should be rendered
-       -- in italics.
+     zoomFactor     <- mkHTML "<i>zoom</i>="         -- The text "zoom="
+     zoomInput      <- mkInput 20 "1"                -- The zoom input, initially 1
+     zoom           <- mkButton "zoom"               -- The zoom button
+     differentiate  <- mkButton "differentiate"      -- The differentiate button
 
      -- Add the user interface elements to the page, creating a specific layout
      formula <- row [pure fx,pure input]
@@ -39,11 +37,25 @@ setup window =
 
      -- Interaction (install event handlers)
      on UI.click     draw  $ \ _ -> readAndDraw input zoomInput canvas 
-     on valueChange' input $ \ _ -> readAndDraw input zoomInput canvas 
+     on valueChange' input $ \ _ -> readAndDraw input zoomInput canvas
 
+     -- zoom and differentiate interactions --
      on UI.click     zoom $ \ _ -> readAndDraw input zoomInput canvas 
      on valueChange' zoomInput $ \ _ -> readAndDraw input zoomInput canvas
      on UI.click     differentiate $ \ _ -> differentiateAndDraw input zoomInput canvas
+
+
+--------------- H ---------------
+
+points :: Expr -> Double -> (Int, Int) -> [Point]
+points exp scale (width, height) = map (point_conversion) [(x, eval exp x) | x <- [-range, (-range+scale) .. range]]
+    where
+        point_conversion (x, y) = (x*(1/scale) + (fromIntegral width/2), y*(-1/scale) + (fromIntegral height/2))
+        range                   = (scale * (fromIntegral width))/2
+
+
+
+--------------- I ---------------
 
 readAndDraw :: Element -> Element -> Canvas -> UI ()
 readAndDraw input zoomInput canvas =
@@ -59,11 +71,7 @@ readAndDraw input zoomInput canvas =
         Nothing -> 
             return ()
 
-points :: Expr -> Double -> (Int, Int) -> [Point]
-points exp scale (width, height) = map (point_conversion) [(x, eval exp x) | x <- [-range, (-range+scale) .. range]]
-    where
-        point_conversion (x, y) = (x*(1/scale) + (fromIntegral width/2), y*(-1/scale) + (fromIntegral height/2))
-        range                   = (scale * (fromIntegral width))/2
+--------------- K ---------------
 
 differentiateAndDraw :: Element -> Element -> Canvas -> UI ()
 differentiateAndDraw input zoomInput canvas = do 
@@ -78,4 +86,3 @@ differentiateAndDraw input zoomInput canvas = do
            input # set' value dExpStr
            readAndDraw input zoomInput canvas
         Nothing -> return ()
-

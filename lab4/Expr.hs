@@ -11,6 +11,7 @@ import Test.QuickCheck
 -- New functions can be added here.
 data Func = Sin | Cos
     deriving (Read, Show, Eq)
+
 evalFun :: Func -> (Double -> Double)
 evalFun Sin = Prelude.sin
 evalFun Cos = Prelude.cos
@@ -47,13 +48,17 @@ showFactor :: Expr -> String
 showFactor (Add e1 e2) = "(" ++ showExpr (Add e1 e2) ++ ")"
 showFactor e           = showExpr e
 
+
 showExpr :: Expr -> String
 showExpr (Num n) | n >= 0 = show n 
                  | otherwise = "(" ++ show n ++ ")"
+
 showExpr Var     = "x"
+
 showExpr (Add e1 (Add e2 e3)) = showExpr e1 ++ "+(" ++ showExpr (Add e2 e3) ++ ")" 
-showExpr (Add e1 e2)          = showExpr e1 ++ "+" ++ showExpr e2 
-showExpr (Mul e1 (Mul e2 e3)) = showFactor e1 ++ "*(" ++ showFactor (Mul e2 e3) ++ ")"
+showExpr (Add e1 e2)          = showExpr e1 ++ "+" ++ showExpr e2
+
+showExpr (Mul e1 (Mul e2 e3)) = showFactor e1 ++ "*(" ++ showExpr (Mul e2 e3) ++ ")"
 showExpr (Mul e1 e2) = showFactor e1 ++ "*" ++ showFactor e2
 
 showExpr (App Sin (Num n)) = "sin " ++ show n
@@ -65,9 +70,7 @@ showExpr (App Cos (Var)) = "cos x"
 showExpr (App Cos e) = "cos(" ++ showExpr e ++ ")"
 
 --------------- C --------------- 
-eval :: Expr -> Double -> Double 
-
-
+eval :: Expr -> Double -> Double
 eval (Num n) _     = n
 eval Var     v     = v
 eval (Add e1 e2) v = eval e1 v + eval e2 v
@@ -82,14 +85,6 @@ skipSpace :: Parser ()
 skipSpace = do
     zeroOrMore $ char ' '
     return ()
-    
-
--- operator :: Char -> (Num -> Num -> Num) -> 
--- operator c op = do
---     n <- number
---     char c
---     m <- number
---     return (n `op` m)
 
 funcName :: Parser Expr
 funcName = do
@@ -133,9 +128,6 @@ readExpr s = if (isNothing e) then Nothing
 --------------- E --------------- 
 
 prop_ShowReadExpr :: Expr -> Bool
--- prop_ShowReadExpr e = shownBefore == shownAfter
---                     where shownBefore = showExpr e
---                           shownAfter  = showExpr(fromJust (readExpr shownBefore))
 prop_ShowReadExpr e = e == (fromJust $ readExpr $ showExpr e) 
 
 arbExpr :: Int -> Gen Expr
@@ -212,4 +204,3 @@ differentiate (Add e1 e2) = simplify (Add (differentiate e1) (differentiate e2))
 differentiate (Mul e1 e2) = simplify (Add (Mul (differentiate e1) e2) (Mul (differentiate e2) e1))
 differentiate (App Sin e) = simplify (Mul(differentiate e) (App Cos e))
 differentiate (App Cos e) = simplify (Mul (Num (-1)) (Mul(differentiate e) (App Sin e)))
-
