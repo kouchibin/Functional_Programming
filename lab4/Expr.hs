@@ -25,7 +25,7 @@ data Expr = Num Double |
             Add Expr Expr |
             Mul Expr Expr |
             App Func  Expr
-            deriving (Show, Eq)
+            deriving (Read, Show, Eq)
 
 x :: Expr
 x = Var
@@ -90,6 +90,7 @@ funcName = do
     name <- oneOrMore $ sat isLetter
     let func = getFunByName name
     e <- factor
+    zeroOrMore $ char ' '
     if (isNothing func) then failure
     else return (App (fromJust func) e)
 
@@ -97,12 +98,25 @@ varP :: Parser Expr
 varP = do
     zeroOrMore $ char ' '
     char 'x'
+    zeroOrMore $ char ' '
     return Var
+
+paren :: Parser Expr
+paren = do
+    zeroOrMore $ char ' '
+    char '('
+    zeroOrMore $ char ' '
+    exp <- expr
+    zeroOrMore $ char ' '
+    char ')'
+    zeroOrMore $ char ' '
+    return exp
+    
 
 expr, term, factor :: Parser Expr
 expr   = foldl1 Add <$> chain term (char '+')
 term   = foldl1 Mul <$> chain factor (char '*')
-factor = funcName <|> varP <|>  number  <|> char '(' *> expr <* char ')'  
+factor = funcName <|> varP <|>  number  <|> paren  
 
 readExpr :: String -> Maybe Expr
 readExpr s = if (isNothing e) then Nothing
@@ -143,40 +157,43 @@ instance Arbitrary Expr where
 simplify :: Expr -> Expr
 simplify (Num d) = Num d
 simplify Var = Var
+simplify (App f e)               = App f (simplify e)
 
 simplify (Add (Num d1) (Num d2)) = Num (d1 + d2)
-simplify (Add (Num 0) e)         = e
-simplify (Add e (Num 0))         = e
-simplify (Add (Num d) Var) = Add (Num d) Var
-simplify (Add Var (Num d)) = Add Var (Num d)
-simplify (Add e1 e2)             =  case e1' of 
-        Num e1n -> case e2' of
-                    Num e2n -> simplify $ Add e1' e2'
-                    _       -> Add e1' e2'
-        _       -> Add e1' e2'
+simplify (Add (Num 0) e)         = simplify e
+simplify (Add e (Num 0))         = simplify e
+simplify (Add (Add (Num d1) e) (Num d2)) = simplify $ Add (Num (d1+d2)) e
+simplify (Add (Add e (Num d1)) (Num d2)) = simplify $ Add (Num (d1+d2)) e
+simplify (Add (Num d1) (Add e (Num d2))) = simplify $ Add (Num (d1+d2)) e
+simplify (Add (Num d1) (Add (Num d2) e)) = simplify $ Add (Num (d1+d2)) e
+simplify (Add e1 e2) = if e1 == e1' && e2 == e2' 
+                         then Add e1' e2'
+                         else simplify $ Add e1' e2'
     where e1' = simplify e1
           e2' = simplify e2
 
 simplify (Mul (Num d1) (Num d2)) = Num (d1 * d2)
 simplify (Mul (Num 0) e)         = Num 0
 simplify (Mul e (Num 0))         = Num 0
-simplify (Mul (Num 1) e)         = e
-simplify (Mul e (Num 1))         = e
-simplify (Mul (Num d) Var) = Mul (Num d) Var
-simplify (Mul Var (Num d)) = Mul Var (Num d)
-simplify (Mul e1 e2)             = case e1' of 
-        Num e1n -> case e2' of
-                    Num e2n -> simplify $ Mul e1' e2'
-                    _       -> Mul e1' e2'
-        _       -> Mul e1' e2'
+simplify (Mul (Num 1) e)         = simplify e
+simplify (Mul e (Num 1))         = simplify e
+simplify (Mul (Mul (Num d1) e) (Num d2)) = simplify $ Mul (Num (d1*d2)) e
+simplify (Mul (Mul e (Num d1)) (Num d2)) = simplify $ Mul (Num (d1*d2)) e
+simplify (Mul (Num d1) (Mul e (Num d2))) = simplify $ Mul (Num (d1*d2)) e
+simplify (Mul (Num d1) (Mul (Num d2) e)) = simplify $ Mul (Num (d1*d2)) e
+simplify (Mul e1 e2) = if e1 == e1' && e2 == e2' 
+                         then Mul e1' e2'
+                         else simplify $ Mul e1' e2'
     where e1' = simplify e1
           e2' = simplify e2
 
-simplify (App f e)               = App f (simplify e)
 
-prop_simplify :: Expr -> Double -> Bool 
-prop_simplify e x =  eval e x == eval se x && simplify se == se  
+prop_simplify :: Expr -> Double -> Property 
+prop_simplify e x =  within timeout $ diff < epsilon && simplify se == se  
     where se = simplify e
+          timeout = 1000000
+          epsilon = 0.00001
+          diff    = abs (eval e x - eval se x)
 
 
 --------------- G --------------- 
@@ -186,6 +203,6 @@ differentiate (Num d) = Num 0
 differentiate Var     = Num 1
 differentiate (Add e1 e2) = simplify (Add (differentiate e1) (differentiate e2))
 differentiate (Mul e1 e2) = simplify (Add (Mul (differentiate e1) e2) (Mul (differentiate e2) e1))
-differentiate (App Sin e) = simplify(Mul(differentiate e) (App Cos e))
-differentiate (App Cos e) = simplify(Mul (Num (-1)) (Mul(differentiate e) (App Sin e)))
+differentiate (App Sin e) = simplify (Mul(differentiate e) (App Cos e))
+differentiate (App Cos e) = simplify (Mul (Num (-1)) (Mul(differentiate e) (App Sin e)))
 

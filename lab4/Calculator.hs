@@ -75,7 +75,7 @@ differentiateAndDraw input zoomInput canvas = do
            clearCanvas canvas
            let dExp = differentiate e 
            let dExpStr = showExpr dExp
-           input # set' UI.text dExpStr
+           input # set' value dExpStr
            readAndDraw input zoomInput canvas
         Nothing -> return ()
 
