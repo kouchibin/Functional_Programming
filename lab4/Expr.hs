@@ -78,38 +78,45 @@ eval (App f e)   v = evalFun f $ eval e v
 number :: Parser Expr 
 number = Num <$> readsP 
 
-operator c op = do
-    n <- number
-    char c
-    m <- number
-    return (n `op` m)
+skipSpace :: Parser ()
+skipSpace = do
+    zeroOrMore $ char ' '
+    return ()
+    
+
+-- operator :: Char -> (Num -> Num -> Num) -> 
+-- operator c op = do
+--     n <- number
+--     char c
+--     m <- number
+--     return (n `op` m)
 
 funcName :: Parser Expr
 funcName = do
-    zeroOrMore $ char ' '
+    skipSpace
     name <- oneOrMore $ sat isLetter
     let func = getFunByName name
     e <- factor
-    zeroOrMore $ char ' '
+    skipSpace
     if (isNothing func) then failure
     else return (App (fromJust func) e)
 
 varP :: Parser Expr
 varP = do
-    zeroOrMore $ char ' '
+    skipSpace
     char 'x'
-    zeroOrMore $ char ' '
+    skipSpace
     return Var
 
 paren :: Parser Expr
 paren = do
-    zeroOrMore $ char ' '
+    skipSpace
     char '('
-    zeroOrMore $ char ' '
+    skipSpace
     exp <- expr
-    zeroOrMore $ char ' '
+    skipSpace
     char ')'
-    zeroOrMore $ char ' '
+    skipSpace
     return exp
     
 
