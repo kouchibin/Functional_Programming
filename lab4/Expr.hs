@@ -16,6 +16,10 @@ evalFun :: Func -> (Double -> Double)
 evalFun Sin = Prelude.sin
 evalFun Cos = Prelude.cos
 
+funStr :: Func -> String
+funStr Sin = "sin"
+funStr Cos = "cos"
+
 getFunByName :: String -> Maybe Func
 getFunByName s | s == "sin" = Just Sin
                | s == "cos" = Just Cos
@@ -25,7 +29,7 @@ data Expr = Num Double |
             Var |
             Add Expr Expr |
             Mul Expr Expr |
-            App Func  Expr
+            App Func Expr
             deriving (Read, Show, Eq)
 
 x :: Expr
@@ -48,7 +52,6 @@ showFactor :: Expr -> String
 showFactor (Add e1 e2) = "(" ++ showExpr (Add e1 e2) ++ ")"
 showFactor e           = showExpr e
 
-
 showExpr :: Expr -> String
 showExpr (Num n) | n >= 0 = show n 
                  | otherwise = "(" ++ show n ++ ")"
@@ -61,15 +64,12 @@ showExpr (Add e1 e2)          = showExpr e1 ++ "+" ++ showExpr e2
 showExpr (Mul e1 (Mul e2 e3)) = showFactor e1 ++ "*(" ++ showExpr (Mul e2 e3) ++ ")"
 showExpr (Mul e1 e2) = showFactor e1 ++ "*" ++ showFactor e2
 
-showExpr (App Sin (Num n)) = "sin " ++ show n
-showExpr (App Sin (Var)) = "sin x" 
-showExpr (App Sin e) = "sin(" ++ showExpr e ++ ")" 
-
-showExpr (App Cos (Num n)) = "cos " ++ show n
-showExpr (App Cos (Var)) = "cos x" 
-showExpr (App Cos e) = "cos(" ++ showExpr e ++ ")"
+showExpr (App f (Add e1 e2))       = funStr f ++"(" ++ showExpr (Add e1 e2) ++ ")" 
+showExpr (App f (Mul e1 e2))       = funStr f ++"(" ++ showExpr (Mul e1 e2) ++ ")" 
+showExpr (App f e)    = funStr f ++ " " ++ showExpr e 
 
 --------------- C --------------- 
+
 eval :: Expr -> Double -> Double
 eval (Num n) _     = n
 eval Var     v     = v
@@ -78,6 +78,7 @@ eval (Mul e1 e2) v = eval e1 v * eval e2 v
 eval (App f e)   v = evalFun f $ eval e v
 
 --------------- D --------------- 
+
 number :: Parser Expr 
 number = Num <$> readsP 
 
@@ -86,8 +87,8 @@ skipSpace = do
     zeroOrMore $ char ' '
     return ()
 
-funcName :: Parser Expr
-funcName = do
+funcP :: Parser Expr
+funcP = do
     skipSpace
     name <- oneOrMore $ sat isLetter
     let func = getFunByName name
@@ -118,7 +119,7 @@ paren = do
 expr, term, factor :: Parser Expr
 expr   = foldl1 Add <$> chain term (char '+')
 term   = foldl1 Mul <$> chain factor (char '*')
-factor = funcName <|> varP <|>  number  <|> paren  
+factor = funcP <|> varP <|> number <|> paren  
 
 readExpr :: String -> Maybe Expr
 readExpr s = if (isNothing e) then Nothing
@@ -150,26 +151,30 @@ arbExpr i = frequency [(1, rNum), (1, rVar), (i, rBin), (i, rApp)]
 instance Arbitrary Expr where
     arbitrary = sized arbExpr
 
-
 --------------- F --------------- 
 
 simplify :: Expr -> Expr
-simplify (Num d) = Num d
-simplify Var = Var
-simplify (App f e)               = App f (simplify e)
+simplify (Num d)   = Num d
+simplify Var       = Var
+simplify (App f e) = App f (simplify e)
 
 simplify (Add (Num d1) (Num d2)) = Num (d1 + d2)
 simplify (Add (Num 0) e)         = simplify e
 simplify (Add e (Num 0))         = simplify e
+
+-- Simplify "1 + (2 + x)" and similar cases to "3 + x".
 simplify (Add (Add (Num d1) e) (Num d2)) = simplify $ Add (Num (d1+d2)) e
 simplify (Add (Add e (Num d1)) (Num d2)) = simplify $ Add (Num (d1+d2)) e
 simplify (Add (Num d1) (Add e (Num d2))) = simplify $ Add (Num (d1+d2)) e
 simplify (Add (Num d1) (Add (Num d2) e)) = simplify $ Add (Num (d1+d2)) e
+
+-- Need to prevent infinite recurisive call.
 simplify (Add e1 e2) = if e1 == e1' && e2 == e2' 
                          then Add e1' e2'
                          else simplify $ Add e1' e2'
     where e1' = simplify e1
           e2' = simplify e2
+
 
 simplify (Mul (Num d1) (Num d2)) = Num (d1 * d2)
 simplify (Mul (Num 0) e)         = Num 0
@@ -194,12 +199,11 @@ prop_simplify e x =  within timeout $ diff < epsilon && simplify se == se
           epsilon = 0.00001
           diff    = abs (eval e x - eval se x)
 
-
 --------------- G --------------- 
 
 differentiate :: Expr -> Expr
-differentiate (Num d) = Num 0
-differentiate Var     = Num 1
+differentiate (Num d)     = Num 0
+differentiate Var         = Num 1
 differentiate (Add e1 e2) = simplify (Add (differentiate e1) (differentiate e2))
 differentiate (Mul e1 e2) = simplify (Add (Mul (differentiate e1) e2) (Mul (differentiate e2) e1))
 differentiate (App Sin e) = simplify (Mul(differentiate e) (App Cos e))
