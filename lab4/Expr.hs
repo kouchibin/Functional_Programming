@@ -169,7 +169,11 @@ instance Arbitrary Expr where
 simplify :: Expr -> Expr
 simplify (Num d)   = Num d
 simplify Var       = Var
-simplify (App f e) = App f (simplify e)
+simplify (App f (Num val)) = Num $ eval (App f (Num val)) 0.0
+simplify (App f e) = if e' == e 
+                     then App f e 
+                     else simplify $ App f $ e'
+    where e' = simplify e
 
 simplify (Bin (Num d1) op (Num d2))  = Num $ (getOp op) d1 d2
 simplify (Bin (Num 0) Add e)         = simplify e
