@@ -25,9 +25,12 @@ getFunByName s | s == "sin" = Just Sin
                | s == "cos" = Just Cos
                | otherwise = Nothing
 
+data Bop = Mul | Add
+    deriving (Read, Show, Eq)
+
 data Expr = Num Double |
             Var |
-            Bin Expr Char Expr |
+            Bin Expr Bop Expr |
             App Func Expr
             deriving (Read, Show, Eq)
 
@@ -38,8 +41,8 @@ num :: Double -> Expr
 num d = Num d
 
 add, mul :: Expr -> Expr -> Expr
-add e1 e2 = Bin e1 '+' e2
-mul e1 e2 = Bin e1 '*' e2
+add e1 e2 = Bin e1 Add e2
+mul e1 e2 = Bin e1 Mul e2
 
 sin, cos :: Expr -> Expr
 sin e = App Sin e
@@ -47,14 +50,18 @@ cos e = App Cos e
 
 -- We thought about using the operator function inside the definition of Expr,
 -- but then we cannot derive Eq, which is needed when comparing Exprs.
-getOp :: Char -> (Double -> Double -> Double)
-getOp '+' = (+)
-getOp '*' = (*)
+getOp :: Bop -> (Double -> Double -> Double)
+getOp Add = (+)
+getOp Mul = (*)
 
 --------------- B --------------- 
 
+showBop :: Bop -> String
+showBop Mul = "*"
+showBop Add = "+"
+
 showFactor :: Expr -> String
-showFactor (Bin e1 '+' e2) = "(" ++ showExpr (add e1 e2) ++ ")"
+showFactor (Bin e1 Add e2) = "(" ++ showExpr (add e1 e2) ++ ")"
 showFactor e               = showExpr e
 
 showExpr :: Expr -> String
@@ -63,16 +70,16 @@ showExpr (Num n) | n >= 0    = show n
 showExpr Var                 = "x"
 
 showExpr (Bin e1 opl (Bin e2 opr e3)) 
-    | opl == opr && opl == '*'  = showFactor e1 ++ 
-                                  (opl:"(") ++ 
+    | opl == opr && opl == Mul  = showFactor e1 ++ 
+                                  "*(" ++ 
                                   showFactor (Bin e2 opr e3) ++ 
                                   ")" 
     | opl == opr                = showExpr e1 ++ 
-                                  (opl:"(") ++ 
+                                  showBop opl ++ "(" ++ 
                                   showExpr (Bin e2 opr e3) ++ 
                                   ")" 
-showExpr (Bin e1 '*' e2)        = showFactor e1 ++ "*" ++ showFactor e2
-showExpr (Bin e1 op e2)         = showExpr e1 ++ [op] ++ showExpr e2
+showExpr (Bin e1 Mul e2)        = showFactor e1 ++ "*" ++ showFactor e2
+showExpr (Bin e1 op e2)         = showExpr e1 ++ showBop op ++ showExpr e2
 showExpr (App f (Bin e1 op e2)) = funStr f ++ "(" ++ showExpr (Bin e1 op e2) ++ ")" 
 showExpr (App f e)              = funStr f ++ " " ++ showExpr e 
 
@@ -81,8 +88,7 @@ showExpr (App f e)              = funStr f ++ " " ++ showExpr e
 eval :: Expr -> Double -> Double
 eval (Num n) _     = n
 eval Var     v     = v
-eval (Bin e1 '+' e2) v = eval e1 v + eval e2 v
-eval (Bin e1 '*' e2) v = eval e1 v * eval e2 v
+eval (Bin e1 op e2) v = (getOp op) (eval e1 v) (eval e2 v)
 eval (App f e)   v = evalFun f $ eval e v
 
 --------------- D --------------- 
@@ -165,13 +171,13 @@ simplify (Num d)   = Num d
 simplify Var       = Var
 simplify (App f e) = App f (simplify e)
 
-simplify (Bin (Num d1) op (Num d2)) = Num $ (getOp op) d1 d2
-simplify (Bin (Num 0) '+' e)         = simplify e
-simplify (Bin e '+' (Num 0))         = simplify e
-simplify (Bin (Num 0) '*' e)         = Num 0
-simplify (Bin e '*' (Num 0))         = Num 0
-simplify (Bin (Num 1) '*' e)         = simplify e
-simplify (Bin e '*' (Num 1))         = simplify e
+simplify (Bin (Num d1) op (Num d2))  = Num $ (getOp op) d1 d2
+simplify (Bin (Num 0) Add e)         = simplify e
+simplify (Bin e Add (Num 0))         = simplify e
+simplify (Bin (Num 0) Mul e)         = Num 0
+simplify (Bin e Mul (Num 0))         = Num 0
+simplify (Bin (Num 1) Mul e)         = simplify e
+simplify (Bin e Mul (Num 1))         = simplify e
 
 -- Simplify "1 + (2 + x)" and similar cases to "3 + x".
 -- Some copy and paste code here but there doesn't seem to be a good way to refactor this
@@ -203,9 +209,9 @@ prop_simplify e x =  within timeout $ diff < epsilon && simplify se == se
 differentiate :: Expr -> Expr
 differentiate (Num d)     = Num 0
 differentiate Var         = Num 1
-differentiate (Bin e1 '+' e2) = simplify $ add (differentiate e1) 
+differentiate (Bin e1 Add e2) = simplify $ add (differentiate e1) 
                                                (differentiate e2)
-differentiate (Bin e1 '*' e2) = simplify $ add (mul (differentiate e1) e2)
+differentiate (Bin e1 Mul e2) = simplify $ add (mul (differentiate e1) e2)
                                                (mul (differentiate e2) e1)
 differentiate (App Sin e) = simplify (mul (differentiate e) (App Cos e))
 differentiate (App Cos e) = simplify (mul (Num (-1)) 
